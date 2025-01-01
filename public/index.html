@@ -1,0 +1,283 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisionCraft - AI Image Generator</title>
+  <meta name="description" content="VisionCraft is an AI-powered image generator that creates stunning visuals based on your text prompts.">
+  <meta name="keywords" content="AI Image Generator, VisionCraft, AI Art, Image Creation, Text to Image">
+  <meta name="author" content="VisionCraft Team">
+  <link rel="canonical" href="https://www.visioncraft.com">
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-r from-gray-900 via-purple-900 to-teal-900 flex items-center justify-center min-h-screen p-4">
+  <div class="bg-gradient-to-r from-gray-800 via-purple-800 to-teal-800 p-10 rounded-lg shadow-lg max-w-3xl w-full">
+    <h1 class="text-3xl font-bold text-white mb-6 text-center">VisionCraft</h1>
+    <form id="promptForm" class="space-y-6">
+      <div class="flex justify-center space-x-4 mb-6">
+        <label class="text-white">
+          <input type="radio" name="promptMode" value="multiple" checked class="mr-2"> Multiple Prompts
+        </label>
+        <label class="text-white">
+          <input type="radio" name="promptMode" value="single" class="mr-2"> Single Prompt
+        </label>
+      </div>
+      <div id="promptContainer">
+        <div class="prompt-item relative space-y-2 mb-4">
+          <textarea
+            name="prompt"
+            placeholder="Describe the image..."
+            class="w-full h-40 px-4 py-3 border border-gray-700 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+            required
+          ></textarea>
+          <button type="button" class="absolute top-2 right-2 text-red-500 hover:text-red-700 remove-prompt">
+            <i class="fas fa-times-circle"></i>
+          </button>
+          <button type="button" class="absolute bottom-2 right-2 text-teal-500 hover:text-teal-700 add-prompt">
+            <i class="fas fa-plus-circle"></i>
+          </button>
+        </div>
+      </div>
+      <button
+        type="submit"
+        class="w-full bg-purple-500 text-white px-4 py-3 rounded-lg hover:bg-purple-600 transition duration-300"
+      >
+        <i class="fas fa-paper-plane mr-2"></i>Submit
+      </button>
+    </form>
+    <div id="result" class="mt-6 space-y-4"></div>
+    <button
+      type="button"
+      id="downloadAll"
+      class="w-full bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 transition duration-300 mt-4 hidden"
+    >
+      <i class="fas fa-download mr-2"></i>Download All Images
+    </button>
+  </div>
+
+  <script>
+    const promptContainer = document.getElementById("promptContainer");
+    const promptForm = document.getElementById("promptForm");
+    const resultDiv = document.getElementById("result");
+    const downloadAllButton = document.getElementById("downloadAll");
+    const promptModeRadios = document.querySelectorAll('input[name="promptMode"]');
+  
+    // Add a new prompt textarea
+    promptContainer.addEventListener("click", (e) => {
+      if (e.target.closest(".add-prompt")) {
+        const newPrompt = document.createElement("div");
+        newPrompt.className = "prompt-item relative space-y-2 mb-4";
+        newPrompt.innerHTML = `
+          <textarea
+            name="prompt"
+            placeholder="Describe the image..."
+            class="w-full h-40 px-4 py-3 border border-gray-700 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+            required
+          ></textarea>
+          <button type="button" class="absolute top-2 right-2 text-red-500 hover:text-red-700 remove-prompt">
+            <i class="fas fa-times-circle"></i>
+          </button>
+          <button type="button" class="absolute bottom-2 right-2 text-teal-500 hover:text-teal-700 add-prompt">
+            <i class="fas fa-plus-circle"></i>
+          </button>
+        `;
+        promptContainer.appendChild(newPrompt);
+      }
+    });
+  
+    // Remove a prompt textarea and its result
+    promptContainer.addEventListener("click", (e) => {
+      if (e.target.closest(".remove-prompt")) {
+        const promptItem = e.target.closest(".prompt-item");
+        const index = Array.from(promptContainer.children).indexOf(promptItem);
+        promptItem.remove();
+        const resultItems = resultDiv.querySelectorAll(".result-item");
+        if (resultItems[index]) {
+          resultItems[index].remove();
+        }
+      }
+    });
+  
+    // Handle form submission
+    promptForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resultDiv.innerHTML = `
+        <div class="flex items-center justify-center space-x-2">
+          <i class="fas fa-spinner fa-spin text-teal-500 text-2xl"></i>
+          <span class="text-white">Processing...</span>
+        </div>
+      `;
+  
+      // Determine the prompt mode
+      const promptMode = document.querySelector('input[name="promptMode"]:checked').value;
+      let prompts = [];
+  
+      if (promptMode === "multiple") {
+        // Collect all prompts
+        prompts = Array.from(promptContainer.querySelectorAll("textarea"))
+          .map((textarea) => textarea.value);
+      } else {
+        // Split the single prompt into multiple prompts
+        const singlePrompt = promptContainer.querySelector("textarea").value;
+        prompts = singlePrompt.split("\n").filter(prompt => prompt.trim() !== "");
+      }
+  
+      try {
+        // Call the API for each prompt
+        const imageResults = await Promise.all(
+          prompts.map((prompt) =>
+            fetch("/api/generate", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ prompt }),
+            }).then((response) => response.json())
+          )
+        );
+  
+        // Display all results
+        resultDiv.innerHTML = imageResults
+          .map((data, index) => {
+            if (data.imageUrl) {
+              return `
+                <div class="result-item space-y-2 relative">
+                  <h3 class="text-lg font-medium text-white">Image for Prompt ${index + 1}:</h3>
+                  <div class="relative">
+                    <img src="${data.imageUrl}" alt="Generated image based on the prompt: ${prompts[index]}" class="rounded-lg shadow-lg w-full">
+                    <button type="button" class="absolute top-2 right-2 bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 transition duration-300 refresh-btn" data-prompt="${prompts[index]}" data-index="${index}">
+                      <i class="fas fa-sync-alt"></i>
+                    </button>
+                  </div>
+                </div>
+              `;
+            } else {
+              return `
+                <div class="result-item text-red-500">
+                  <i class="fas fa-exclamation-triangle"></i> Error for Prompt ${index + 1}: ${data.error || "Failed to generate the image."}
+                </div>
+              `;
+            }
+          })
+          .join("");
+  
+        // Show the download all button if there are images
+        if (imageResults.some(data => data.imageUrl)) {
+          downloadAllButton.classList.remove("hidden");
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="text-red-500">
+            <i class="fas fa-exclamation-triangle"></i> An error occurred while processing your request.
+          </div>
+        `;
+      }
+    });
+  
+    // Handle refresh button clicks
+    resultDiv.addEventListener("click", async (e) => {
+      const refreshButton = e.target.closest(".refresh-btn");
+      if (!refreshButton) return;
+  
+      // Get the prompt and index for this image
+      const prompt = refreshButton.getAttribute("data-prompt");
+      const index = refreshButton.getAttribute("data-index");
+  
+      // Add a loading spinner to the refresh button
+      refreshButton.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+  
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt }),
+        });
+  
+        const data = await response.json();
+  
+        if (response.ok && data.imageUrl) {
+          // Update the corresponding image
+          const img = resultDiv.querySelectorAll(".result-item")[index].querySelector("img");
+          img.src = data.imageUrl;
+        } else {
+          alert(`Error: ${data.error || "Failed to refresh the image."}`);
+        }
+      } catch (error) {
+        alert("An error occurred while refreshing the image.");
+      } finally {
+        refreshButton.innerHTML = `<i class="fas fa-sync-alt"></i>`;
+      }
+    });
+  
+    // Handle download all images button click
+    downloadAllButton.addEventListener("click", async () => {
+      const images = resultDiv.querySelectorAll("img");
+      const zip = new JSZip();
+      const imgFolder = zip.folder("images");
+  
+      await Promise.all(
+        Array.from(images).map((img, index) =>
+          fetch(`/proxy?url=${encodeURIComponent(img.src)}`)
+            .then((response) => response.blob())
+            .then((blob) => {
+              imgFolder.file(`image_${index + 1}.jpg`, blob);
+            })
+        )
+      );
+  
+      zip.generateAsync({ type: "blob" }).then((content) => {
+        saveAs(content, "images.zip");
+      });
+    });
+  
+    // Handle prompt mode change
+    promptModeRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'single') {
+          // Switch to single prompt mode
+          promptContainer.innerHTML = `
+            <div class="prompt-item relative space-y-2 mb-4">
+              <textarea
+                name="prompt"
+                placeholder="Describe the image..."
+                class="w-full h-40 px-4 py-3 border border-gray-700 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                required
+              ></textarea>
+            </div>
+          `;
+        } else {
+          // Switch to multiple prompt mode
+          promptContainer.innerHTML = `
+            <div class="prompt-item relative space-y-2 mb-4">
+              <textarea
+                name="prompt"
+                placeholder="Describe the image..."
+                class="w-full h-40 px-4 py-3 border border-gray-700 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                required
+              ></textarea>
+              <button type="button" class="absolute top-2 right-2 text-red-500 hover:text-red-700 remove-prompt">
+                <i class="fas fa-times-circle"></i>
+              </button>
+              <button type="button" class="absolute bottom-2 right-2 text-teal-500 hover:text-teal-700 add-prompt">
+                <i class="fas fa-plus-circle"></i>
+              </button>
+            </div>
+          `;
+        }
+      });
+    });
+  </script>
+  
+</body>
+</html>
