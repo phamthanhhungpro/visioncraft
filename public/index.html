@@ -17,6 +17,12 @@
     body {
       font-family: 'Roboto', sans-serif;
     }
+    img {
+      width: 100%;
+      aspect-ratio: 16 / 9; /* Ensure the image maintains 16:9 aspect ratio */
+      object-fit: cover;   /* Ensures the image is cropped to fit the aspect ratio */
+      border-radius: 0.5rem; /* Rounded corners for better aesthetics */
+    }
   </style>
 </head>
 <body class="bg-gradient-to-r from-gray-900 via-purple-900 to-teal-900 flex items-center justify-center min-h-screen p-4">
@@ -225,21 +231,66 @@
       const images = resultDiv.querySelectorAll("img");
       const zip = new JSZip();
       const imgFolder = zip.folder("images");
-  
-      await Promise.all(
-        Array.from(images).map((img, index) =>
-          fetch(`/proxy?url=${encodeURIComponent(img.src)}`)
-            .then((response) => response.blob())
-            .then((blob) => {
-              imgFolder.file(`image_${index + 1}.jpg`, blob);
-            })
-        )
-      );
-  
-      zip.generateAsync({ type: "blob" }).then((content) => {
+    
+      // Show loading state
+      downloadAllButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Converting & Packaging...';
+      downloadAllButton.disabled = true;
+    
+      try {
+        await Promise.all(
+          Array.from(images).map(async (img, index) => {
+            const response = await fetch(`/proxy?url=${encodeURIComponent(img.src)}`);
+            const blob = await response.blob();
+            const convertedBlob = await convertToAspectRatio(blob);
+            imgFolder.file(`image_${index + 1}.jpg`, convertedBlob);
+          })
+        );
+    
+        const content = await zip.generateAsync({ type: "blob" });
         saveAs(content, "images.zip");
-      });
+      } catch (error) {
+        alert("Error packaging images: " + error.message);
+      } finally {
+        // Restore button state
+        downloadAllButton.innerHTML = '<i class="fas fa-download mr-2"></i>Download All Images';
+        downloadAllButton.disabled = false;
+      }
     });
+    
+    // Add this function before the existing script code
+    function convertToAspectRatio(imageBlob) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+    
+          // Set canvas size to maintain 16:9 aspect ratio
+          const targetWidth = 1920;  // Full HD width
+          const targetHeight = 1080; // Full HD height
+    
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+    
+          // Fill background with black
+          ctx.fillStyle = 'black';
+          ctx.fillRect(0, 0, targetWidth, targetHeight);
+    
+          // Calculate scaling and positioning to maintain aspect ratio
+          const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+          const scaledWidth = img.width * scale;
+          const scaledHeight = img.height * scale;
+          const x = (targetWidth - scaledWidth) / 2;
+          const y = (targetHeight - scaledHeight) / 2;
+    
+          // Draw image centered
+          ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+    
+          canvas.toBlob(resolve, 'image/jpeg', 0.95);
+        };
+        img.src = URL.createObjectURL(imageBlob);
+      });
+    }
   
     // Handle prompt mode change
     promptModeRadios.forEach(radio => {
